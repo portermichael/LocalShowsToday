@@ -1,0 +1,59 @@
+const moment = require('moment');
+const superagent = require('superagent');
+const Alexa = require('alexa-sdk');
+
+function phraseConstructor(index, name, startTime, venue) {
+  return `The ${name}  starts at ${startTime ? startTime : 'sometime'} today in ${venue}`
+}
+
+var handlers = {
+  'LaunchRequest': function () {
+    this.emit('GetEvents');
+  },
+
+  'GetEvents': function () {
+    console.log(this.event.request)
+
+    let timeNow = new Date()
+    timeNow.setHours(timeNow.getHours() - 3);
+    let startTime = moment.parseZone(timeNow).utc().format();
+    timeNow.setHours(timeNow.getHours + 18);
+    let endTime = moment.parseZone(timeNow).utc().format();
+
+    let URL = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=I8sT5VGeocE0mA5ftbGkKNoAskZyIMo8&city=Seattle&startDateTime=${startTime}&endDateTime=${endTime}`
+    console.log(URL)
+
+    let arrOfEvents = []
+    superagent.get(URL)
+      .then(res => {
+        arrOfEvents = res.body._embedded.events.map((e, index) => {
+          let localEvent = {
+            _id: e.id,
+            name: e.name,
+            startTime: e.dates.start.localTime,
+            category: e.classifications[0].segment.name,
+            venue: e._embedded.venues[0].name
+          }
+          localEvent.phrase = phraseConstructor(index, localEvent.name, localEvent.startTime, localEvent.venue)
+          return (localEvent)
+        })
+      })
+      .then(()=>{
+        console.log(arrOfEvents)
+        this.emit(':tell', arrOfEvents[0].phrase)
+      })
+      .catch(console.error);
+
+
+  }
+};
+
+
+exports.handler = function (event, context, callback) {
+  var alexa = Alexa.handler(event, context);
+
+  // alexa.dynamoDBTableName = 'YourTableName'; // creates new table for userid:session.attributes
+
+  alexa.registerHandlers(handlers);
+  alexa.execute();
+};
